@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Azure ADLS ETL Uploader</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // auto-refresh logs every 10s
+    setInterval(() => {
+      fetch("/").then(res => res.text()).then(html => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        document.querySelector("#logsTable tbody").innerHTML =
+          doc.querySelector("#logsTable tbody").innerHTML;
+      });
+    }, 10000);
+
+    // filtering logic
+    function filterLogs() {
+      const search = document.getElementById("searchInput").value.toLowerCase();
+      const status = document.getElementById("statusFilter").value;
+      const rows = document.querySelectorAll("#logsTable tbody tr");
+
+      rows.forEach(row => {
+        const fileName = row.cells[0]?.innerText.toLowerCase();
+        const statusText = row.cells[1]?.innerText;
+
+        const matchSearch = !search || (fileName && fileName.includes(search));
+        const matchStatus = !status || (statusText && statusText.includes(status));
+
+        row.style.display = (matchSearch && matchStatus) ? "" : "none";
+      });
+    }
+  </script>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+
+  <h1 class="text-3xl font-bold text-blue-700 mb-6">Azure ADLS ETL Uploader</h1>
+
+  <!-- Unified Config Form -->
+  <form method="POST" action="/configure" enctype="multipart/form-data"
+        class="bg-white shadow-lg rounded-2xl p-6 w-full max-w-3xl mb-10">
+
+    <h2 class="text-xl font-semibold mb-4">Azure ADLS Configuration</h2>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium mb-1">Subscription ID</label>
+        <input type="text" name="subscription_id"
+               class="w-full border rounded-lg px-3 py-2" required>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Resource Group</label>
+        <input type="text" name="resource_group"
+               class="w-full border rounded-lg px-3 py-2" required>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Location</label>
+        <input type="text" name="location" value="eastus"
+               class="w-full border rounded-lg px-3 py-2" required>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Storage Account</label>
+        <input type="text" name="storage_account"
+               class="w-full border rounded-lg px-3 py-2" required>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Storage Key</label>
+        <input type="password" name="storage_key"
+               class="w-full border rounded-lg px-3 py-2" required>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Container</label>
+        <input type="text" name="container"
+               class="w-full border rounded-lg px-3 py-2" required>
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium mb-1">Select Parent Folder</label>
+        <input type="file" name="local_folder" webkitdirectory directory multiple
+               class="w-full border rounded-lg px-3 py-2 bg-gray-50" required>
+      </div>
+    </div>
+
+    <button type="submit"
+            class="mt-6 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition">
+      Save Configuration & Start Watching
+    </button>
+  </form>
+
+  <!-- Upload Logs -->
+  <div class="bg-white shadow-lg rounded-2xl p-6 w-full max-w-5xl">
+    <div class="flex flex-col md:flex-row justify-between items-center mb-4 gap-4">
+      <h2 class="text-xl font-semibold">Upload Logs</h2>
+      <div class="flex gap-2">
+        <input type="text" id="searchInput" onkeyup="filterLogs()"
+               placeholder="Search file..."
+               class="border rounded-lg px-3 py-1 text-sm">
+        <select id="statusFilter" onchange="filterLogs()"
+                class="border rounded-lg px-3 py-1 text-sm">
+          <option value="">All Status</option>
+          <option value="SUCCESS">Success</option>
+          <option value="FAILED">Failed</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm border" id="logsTable">
+        <thead class="bg-gray-200">
+          <tr>
+            <th class="px-4 py-2 border">File Name</th>
+            <th class="px-4 py-2 border">Status</th>
+            <th class="px-4 py-2 border">Timestamp</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr class="hover:bg-gray-100">
+            <td class="px-4 py-2 border">{{ log[0] }}</td>
+            <td class="px-4 py-2 border">
+              {% if "SUCCESS" in log[1] %}
+                <span class="text-green-600 font-semibold">{{ log[1] }}</span>
+              {% else %}
+                <span class="text-red-600 font-semibold">{{ log[1] }}</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-2 border">{{ log[2] }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="text-center text-gray-500 py-4">No uploads yet</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</body>
+</html>

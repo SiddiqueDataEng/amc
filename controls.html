@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AMC Simulator Controls</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        body { padding-top: 24px; }
+        .card + .card { margin-top: 16px; }
+        .status pre { max-height: 300px; overflow: auto; }
+    </style>
+    <!-- Minimal favicon avoidance -->
+</head>
+<body>
+<div class="container">
+    <h1 class="mb-3">AMC Data Simulator</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="mb-3">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ 'warning' if category == 'warning' else ('success' if category == 'success' else 'info') }}" role="alert">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="row g-3">
+        <div class="col-12 col-lg-8">
+            <div class="card">
+                <div class="card-header">Generate Historic Data</div>
+                <div class="card-body">
+                    <form method="post">
+                        <input type="hidden" name="action" value="generate" />
+                        <div class="row g-3 align-items-end">
+                            <div class="col-sm-4">
+                                <label for="start_date" class="form-label">Start date</label>
+                                <input type="date" class="form-control" id="start_date" name="start_date" value="2020-01-01" required />
+                            </div>
+                            <div class="col-sm-4">
+                                <label for="end_date" class="form-label">End date</label>
+                                <input type="date" class="form-control" id="end_date" name="end_date" value="2024-12-31" required />
+                            </div>
+                            <div class="col-sm-4">
+                                <label for="num_patients" class="form-label">Patients</label>
+                                <input type="number" class="form-control" id="num_patients" name="num_patients" value="5000" min="1" step="1" required />
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <button type="submit" class="btn btn-primary">Generate</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Live Simulation</div>
+                <div class="card-body d-flex gap-2">
+                    <form method="post">
+                        <input type="hidden" name="action" value="start" />
+                        <button type="submit" class="btn btn-success">Start</button>
+                    </form>
+                    <form method="post">
+                        <input type="hidden" name="action" value="stop" />
+                        <button type="submit" class="btn btn-outline-danger">Stop</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Azure Data Lake Storage Configuration</div>
+                <div class="card-body">
+                    <form method="post" class="row g-3">
+                        <input type="hidden" name="action" value="configure_adls" />
+                        
+                        <div class="col-12">
+                            <h6 class="text-primary">Authentication Method</h6>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="auth_method" id="auth_connection_string" value="connection_string" 
+                                    {% if not adls_config or adls_config.get('auth_method', 'connection_string') == 'connection_string' %}checked{% endif %}>
+                                <label class="form-check-label" for="auth_connection_string">
+                                    Connection String (Recommended)
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="auth_method" id="auth_account_key" value="account_key"
+                                    {% if adls_config and adls_config.get('auth_method') == 'account_key' %}checked{% endif %}>
+                                <label class="form-check-label" for="auth_account_key">
+                                    Account Name + Key
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="auth_method" id="auth_sas" value="sas_token"
+                                    {% if adls_config and adls_config.get('auth_method') == 'sas_token' %}checked{% endif %}>
+                                <label class="form-check-label" for="auth_sas">
+                                    SAS Token
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="auth_method" id="auth_azure_cli" value="azure_cli"
+                                    {% if adls_config and adls_config.get('auth_method') == 'azure_cli' %}checked{% endif %}>
+                                <label class="form-check-label" for="auth_azure_cli">
+                                    Azure CLI (az login)
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-12" id="connection_string_section">
+                            <label class="form-label">Connection String</label>
+                            <textarea class="form-control" name="connection_string" rows="3" 
+                                placeholder="DefaultEndpointsProtocol=https;AccountName=adslg2dataeng;AccountKey=...;EndpointSuffix=core.windows.net">{% if adls_config and adls_config.get('connection_string') %}{{ adls_config.connection_string }}{% endif %}</textarea>
+                            <small class="text-muted">Get this from Azure Portal → Storage Account → Access Keys</small>
+                            
+                            {% if azure_config and azure_config.get('storage_account') %}
+                            <div class="mt-2 p-2 bg-info bg-opacity-10 rounded">
+                                <small class="text-info">
+                                    <strong>💡 Found existing Azure Storage Account:</strong><br>
+                                    <strong>Account:</strong> {{ azure_config.storage_account.name }}<br>
+                                    <strong>Location:</strong> {{ azure_config.storage_account.location }}<br>
+                                    <strong>Blob Endpoint:</strong> {{ azure_config.storage_account.blob_endpoint }}<br>
+                                    <strong>Template:</strong> <code>DefaultEndpointsProtocol=https;AccountName={{ azure_config.storage_account.name }};AccountKey=YOUR_KEY_HERE;EndpointSuffix=core.windows.net</code>
+                                </small>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6" id="account_name_section" style="display: none;">
+                            <label class="form-label">Storage Account Name</label>
+                            <input type="text" class="form-control" name="account_name" 
+                                value="{% if adls_config and adls_config.get('account_name') %}{{ adls_config.account_name }}{% elif azure_config and azure_config.get('storage_account') %}{{ azure_config.storage_account.name }}{% else %}adslg2dataeng{% endif %}" 
+                                placeholder="adslg2dataeng">
+                        </div>
+                        <div class="col-md-6" id="account_key_section" style="display: none;">
+                            <label class="form-label">Account Key</label>
+                            <input type="password" class="form-control" name="account_key" 
+                                value="{% if adls_config and adls_config.get('account_key') %}{{ adls_config.account_key }}{% endif %}"
+                                placeholder="Your storage account key">
+                        </div>
+
+                        <div class="col-12" id="sas_token_section" style="display: none;">
+                            <label class="form-label">SAS Token</label>
+                            <textarea class="form-control" name="sas_token" rows="2" 
+                                placeholder="?sv=2022-11-02&ss=bfqt&srt=sco&sp=rwdlacupiytfx&se=...">{% if adls_config and adls_config.get('sas_token') %}{{ adls_config.sas_token }}{% endif %}</textarea>
+                            <small class="text-muted">Include the '?' at the beginning</small>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Container Name</label>
+                            <input type="text" class="form-control" name="container_name" 
+                                value="{% if adls_config and adls_config.get('container_name') %}{{ adls_config.container_name }}{% else %}amc-data{% endif %}" 
+                                placeholder="amc-data" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Path Prefix (Optional)</label>
+                            <input type="text" class="form-control" name="path_prefix" 
+                                value="{% if adls_config and adls_config.get('path_prefix') %}{{ adls_config.path_prefix }}{% else %}amc/{{ username }}{% endif %}" 
+                                placeholder="amc/username">
+                            <small class="text-muted">Virtual folder structure in blob storage</small>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="auto_upload" id="auto_upload" 
+                                    {% if not adls_config or adls_config.get('auto_upload', true) %}checked{% endif %}>
+                                <label class="form-check-label" for="auto_upload">
+                                    Enable Auto-Upload (upload files immediately after generation)
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-12 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">Save Configuration</button>
+                            <button type="button" class="btn btn-outline-secondary" onclick="testAdlsConnection()">Test Connection</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">Azure Data Lake Upload Actions</div>
+                <div class="card-body">
+                    <div class="d-flex gap-2 flex-wrap">
+                        <form method="post" class="d-inline">
+                            <input type="hidden" name="action" value="upload_adls" />
+                            <button type="submit" class="btn btn-info">
+                                <i class="bi bi-cloud-upload"></i> Upload Generated Files
+                            </button>
+                        </form>
+                        <form method="post" class="d-inline">
+                            <input type="hidden" name="action" value="upload_infrastructure" />
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-file-earmark-code"></i> Upload Infrastructure Files
+                            </button>
+                        </form>
+                        <button type="button" class="btn btn-outline-success" onclick="showAdlsStatus()">
+                            <i class="bi bi-info-circle"></i> Check Status
+                        </button>
+                    </div>
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <strong>Upload Generated Files:</strong> Uploads all CSV, JSON, and Parquet files from data generation<br>
+                            <strong>Upload Infrastructure Files:</strong> Uploads ARM templates, Terraform configs, and JSON files
+                        </small>
+                    </div>
+                    
+                    {% if adls_config %}
+                    <div class="mt-3 p-3 bg-light rounded">
+                        <h6 class="text-success">✅ ADLS Configuration Loaded</h6>
+                        <small class="text-muted">
+                            <strong>Method:</strong> {{ adls_config.get('auth_method', 'Not set') }}<br>
+                            <strong>Container:</strong> {{ adls_config.get('container_name', 'Not set') }}<br>
+                            <strong>Path Prefix:</strong> {{ adls_config.get('path_prefix', 'None') }}<br>
+                            <strong>Auto-Upload:</strong> {{ 'Enabled' if adls_config.get('auto_upload') else 'Disabled' }}<br>
+                            <strong>Configured:</strong> {{ adls_config.get('configured_at', 'Unknown') }}
+                        </small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if azure_config %}
+            <div class="card">
+                <div class="card-header">Existing Azure Infrastructure</div>
+                <div class="card-body">
+                    <div class="row">
+                        {% if azure_config.get('resource_group') %}
+                        <div class="col-md-6">
+                            <h6 class="text-primary">Resource Group</h6>
+                            <p class="mb-1"><strong>Name:</strong> {{ azure_config.resource_group.name }}</p>
+                            <p class="mb-1"><strong>Location:</strong> {{ azure_config.resource_group.location }}</p>
+                        </div>
+                        {% endif %}
+                        
+                        {% if azure_config.get('storage_account') %}
+                        <div class="col-md-6">
+                            <h6 class="text-primary">Storage Account</h6>
+                            <p class="mb-1"><strong>Name:</strong> {{ azure_config.storage_account.name }}</p>
+                            <p class="mb-1"><strong>Location:</strong> {{ azure_config.storage_account.location }}</p>
+                            <p class="mb-1"><strong>Blob Endpoint:</strong> <a href="{{ azure_config.storage_account.blob_endpoint }}" target="_blank">{{ azure_config.storage_account.blob_endpoint }}</a></p>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <strong>💡 Quick Setup:</strong> Use the connection string template above with your account key from Azure Portal → Storage Account → Access Keys
+                        </small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="card">
+                <div class="card-header">Database (SQL Server) Connection</div>
+                <div class="card-body">
+                    <form method="post" class="row g-3">
+                        <input type="hidden" name="action" value="set_db" />
+                        <div class="col-md-6">
+                            <label class="form-label">Server</label>
+                            <input type="text" class="form-control" name="db_server" value="DESKTOP-A3PO7VB\SQLEXPRESS" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Database</label>
+                            <input type="text" class="form-control" name="db_name" value="master" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Driver</label>
+                            <input type="text" class="form-control" name="db_driver" value="ODBC Driver 17 for SQL Server" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Authentication</label>
+                            <select name="db_auth" class="form-select">
+                                <option value="windows" selected>Windows (Trusted)</option>
+                                <option value="sql">SQL Login</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">User (SQL Login)</label>
+                            <input type="text" class="form-control" name="db_user" placeholder="sa" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Password (SQL Login)</label>
+                            <input type="password" class="form-control" name="db_pass" />
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">Save Connection</button>
+                            <button type="submit" name="action" value="test_db" class="btn btn-outline-secondary">Test Connection</button>
+                        </div>
+                        <div class="col-12">
+                            <small class="text-muted">Current URL:</small>
+                            <pre class="mb-0 small">{{ db_url }}</pre>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-4">
+            <div class="card status">
+                <div class="card-header">Status</div>
+                <div class="card-body">
+                    {% if status %}
+                        <pre class="mb-0">{{ status | tojson(indent=2) }}</pre>
+                    {% else %}
+                        <span class="text-muted">No status yet.</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4 text-muted">
+        Output directory: <code>{{ status.outdir if status and status.outdir else '' }}</code>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Dynamic form behavior for ADLS configuration
+document.addEventListener('DOMContentLoaded', function() {
+    const authMethods = document.querySelectorAll('input[name="auth_method"]');
+    const sections = {
+        'connection_string': document.getElementById('connection_string_section'),
+        'account_key': document.getElementById('account_name_section'),
+        'account_key': document.getElementById('account_key_section'),
+        'sas_token': document.getElementById('sas_token_section')
+    };
+
+    function toggleSections() {
+        const selectedMethod = document.querySelector('input[name="auth_method"]:checked').value;
+        
+        // Hide all sections
+        Object.values(sections).forEach(section => {
+            if (section) section.style.display = 'none';
+        });
+        
+        // Show relevant sections
+        if (selectedMethod === 'connection_string') {
+            sections.connection_string.style.display = 'block';
+        } else if (selectedMethod === 'account_key') {
+            sections.account_name.style.display = 'block';
+            sections.account_key.style.display = 'block';
+        } else if (selectedMethod === 'sas_token') {
+            sections.sas_token.style.display = 'block';
+        }
+        // azure_cli doesn't need additional fields
+    }
+
+    authMethods.forEach(method => {
+        method.addEventListener('change', toggleSections);
+    });
+    
+    // Initial state
+    toggleSections();
+});
+
+function testAdlsConnection() {
+    // This would make an AJAX call to test the connection
+    alert('Connection test feature coming soon! This will validate your ADLS configuration.');
+}
+
+function showAdlsStatus() {
+    // This would show current ADLS configuration status
+    alert('Status check feature coming soon! This will show your current ADLS configuration and connection status.');
+}
+</script>
+</body>
+</html>
+
+
